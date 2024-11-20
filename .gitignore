@@ -1,6 +1,6 @@
-*.exe
-*.txt
+.exe
 *.out
 *.xml
 .idea/*
 .vscode/*
+nqueen*
