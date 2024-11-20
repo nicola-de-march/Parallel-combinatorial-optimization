@@ -13,6 +13,7 @@
 #include <vector>
 #include <chrono>
 #include <stack>
+#include "parser.hpp"
 
 // N-Queens node
 struct Node {
@@ -31,7 +32,7 @@ struct Node {
 
 // check if placing a queen is safe (i.e., check if all the queens already placed share
 // a same diagonal)
-bool isSafe(const std::vector<int>& board, const int row, const int col)
+bool isSafe(const std::vector<int>& board, const int row, const int col, const Data& data)
 {
   for (int i = 0; i < row; ++i) {
     if (board[i] == col - row + i || board[i] == col + row - i) {
@@ -39,12 +40,18 @@ bool isSafe(const std::vector<int>& board, const int row, const int col)
     }
   }
 
+  // Check additional constraints from data
+  for (size_t i = 0; i < row; ++i) {
+    if (data.get_C_at(i, row) && !(board[i] < col)) {
+      return false;
+    }
+  }
   return true;
 }
 
 // evaluate a given node (i.e., check its board configuration) and branch it if it is valid
 // (i.e., generate its child nodes.)
-void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol)
+void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, const Data& data)
 {
   int depth = parent.depth;
   int N = parent.board.size();
@@ -56,7 +63,7 @@ void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tre
   // if the given node is not a leaf, then update counter and evaluate/branch it
   else {
     for (int j = depth; j < N; j++) {
-      if (isSafe(parent.board, depth, parent.board[j])) {
+      if (isSafe(parent.board, depth, parent.board[j], data)) {
         Node child(parent);
         std::swap(child.board[depth], child.board[j]);
         child.depth++;
@@ -74,8 +81,14 @@ int main(int argc, char** argv) {
     exit(1);
   }
 
+  // Read input data
+  Data data;
+  if (!data.read_input(argv[1])) {
+    return 1;
+  }
+
   // problem size (number of queens)
-  size_t N = std::stoll(argv[1]);
+  size_t N = data.get_n();
   std::cout << "Solving " << N << "-Queens problem\n" << std::endl;
 
   // initialization of the root node (the board configuration where no queen is placed)
@@ -98,7 +111,7 @@ int main(int argc, char** argv) {
     pool.pop();
 
     // check the board configuration of the node and branch it if it is valid.
-    evaluate_and_branch(currentNode, pool, exploredTree, exploredSol);
+    evaluate_and_branch(currentNode, pool, exploredTree, exploredSol, data);
   }
 
   auto end = std::chrono::steady_clock::now();

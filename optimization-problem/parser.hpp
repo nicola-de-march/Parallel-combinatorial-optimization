@@ -11,13 +11,17 @@ class Data{
         size_t n = NULL;
         int* u;
         int** C;
+        std::vector<std::vector<bool>> domains;
     public:
         inline size_t get_n(){return n;}
         inline int* get_u(){return u;}
         inline int** get_C(){return C;}
         inline int get_u_at(size_t i){return u[i];}
-        inline int get_C_at(size_t i, size_t j){return C[i][j];}
-
+        inline int get_C_at(size_t i, size_t j) const {return C[i][j];}
+        // for ex 1 point 3
+        inline const std::vector<bool>& get_domain(size_t i) const { return domains[i]; }
+        inline const std::vector<std::vector<bool>>& get_domains() const { return domains; }
+        
         bool read_input(std::string filename){
             std::ifstream f(filename);
             if (!f.is_open()){
@@ -49,6 +53,7 @@ class Data{
                     u = new int[n];
                     C = new int*[n];
                     for (int i = 0; i < n; ++i) C[i] = new int[n];
+                    domains.resize(n);
                 }
                 if (current == "U"){
                     size_t delimiter_id = s.find(delimiter1);
@@ -59,6 +64,7 @@ class Data{
                     size_t i;
                     ss >> i;
                     u[i] = std::stoi(s_value);
+                    domains[i].resize(u[i] + 1, true);
                 }
                 if (current == "C"){
                     size_t delimiter_id1 = s.find(delimiter1);
