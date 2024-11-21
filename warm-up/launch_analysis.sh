@@ -1,6 +1,7 @@
 #!/bin/bash -l
 ### Request one GPU tasks for 4 hours - dedicate 1/4 of available cores for its management
 #SBATCH -J warm-up
+#SBATCH -o time_analysis.out
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH -c 7
@@ -16,7 +17,7 @@ nvcc -o build/optimistic_min optimistic_min.cu
 nvcc -o build/find_minimum find_minimum.cpp
 
 # Run the codes
-for size in 100 500 1000 5000 10000 100000 500000; do
+for size in 100 500 1000 5000 10000 100000 500000 1000000; do
   for i in {1..3}; do
     ./build/optimistic_min arrays/array_${size}.txt ${size}
     ./build/global_minimum arrays/array_${size}.txt ${size}
