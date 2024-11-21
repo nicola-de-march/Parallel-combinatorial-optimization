@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
     std::cerr << "Error opening time file" << std::endl;
     return -1;
   }
-  output_file << "optimistic," << N << "," << duration.count() << std::endl;
+  output_file << "serial," << N << "," << duration.count() << std::endl;
 
   return 0;
 }
