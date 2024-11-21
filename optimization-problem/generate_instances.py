@@ -22,4 +22,4 @@ def generate_instance(n: int):
 
 
 if __name__ == '__main__':
-    generate_instance(3)
+    generate_instance(100)

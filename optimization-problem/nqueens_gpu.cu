@@ -62,16 +62,35 @@ __global__ void updateDomainsKernel(bool* domains, int N, int row, int col) {
 // update domains to remove impossible values
 void updateDomains(std::vector<std::vector<bool>>& domains, int row, int col, int N) {
   bool* d_domains;
-  size_t size = N * N * sizeof(bool);
-  cudaMalloc(&d_domains, size);
-  cudaMemcpy(d_domains, domains.data(), size, cudaMemcpyHostToDevice);
+  cudaMalloc(d_domains, N * sizeof(bool*));
+  // Calculate the total size of the domains
+  size_t totalSize = 0;
+  for (const auto& domain : domains) {
+    totalSize += domain.size();
+  }
+
+  // Flatten the domains vector for copying to device
+  std::vector<bool> flatDomains;
+  for (const auto& domain : domains) {
+    flatDomains.insert(flatDomains.end(), domain.begin(), domain.end());
+  }
+
+  cudaMemcpy(d_domains, static_cast<const void*>(flatDomains.data()), totalSize * sizeof(bool), cudaMemcpyHostToDevice);
 
   int blockSize = 256;
   int numBlocks = (N + blockSize - 1) / blockSize;
   updateDomainsKernel<<<numBlocks, blockSize>>>(d_domains, N, row, col);
 
-  cudaMemcpy(domains.data(), d_domains, size, cudaMemcpyDeviceToHost);
+  // Copy back the flattened domains
+  cudaMemcpy(flatDomains.data(), d_domains, totalSize * sizeof(bool), cudaMemcpyDeviceToHost);
   cudaFree(d_domains);
+
+  // Unflatten the domains vector
+  size_t offset = 0;
+  for (auto& domain : domains) {
+    std::copy(flatDomains.begin() + offset, flatDomains.begin() + offset + domain.size(), domain.begin());
+    offset += domain.size();
+  }
 }
 
 // evaluate a given node (i.e., check its board configuration) and branch it if it is valid
@@ -147,6 +166,11 @@ int main(int argc, char** argv) {
   std::cout << "Time taken: " << duration.count() << " milliseconds" << std::endl;
   std::cout << "Total solutions: " << exploredSol << std::endl;
   std::cout << "Size of the explored tree: " << exploredTree << std::endl;
+
+  // write results to file
+  std::ofstream outfile("time_analysis.csv", std::ios_base::app);
+  outfile << N << ", " << duration.count() << "\n";
+  outfile.close();
 
   return 0;
 }

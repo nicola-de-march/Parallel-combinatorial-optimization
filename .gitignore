@@ -4,4 +4,6 @@
 .idea/*
 .vscode/*
 nqueen*
-*.txt
+warm-up/build/*
+warm-up/arrays/*
+optimization-problem/boards/*
