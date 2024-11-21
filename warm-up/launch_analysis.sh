@@ -17,7 +17,7 @@ nvcc -o build/optimistic_min optimistic_min.cu
 nvcc -o build/find_minimum find_minimum.cpp
 
 # Run the codes
-for size in 100 500 1000 5000 10000 100000 500000 1000000; do
+for size in 100 500 1000 5000 10000 100000 500000 1000000 10000000 100000000; do
   for i in {1..3}; do
     ./build/optimistic_min arrays/array_${size}.txt ${size}
     ./build/global_minimum arrays/array_${size}.txt ${size}
