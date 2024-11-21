@@ -6,4 +6,5 @@
 nqueen*
 warm-up/build/*
 warm-up/arrays/*
+warm-up/*.out
 optimization-problem/boards/*
