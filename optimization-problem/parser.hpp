@@ -82,7 +82,6 @@ class Data{
                     ss2 >> stj;
                     C[sti][stj] = std::stoi(s_value);
                 }
-
             }
 
             return true;

@@ -3,7 +3,7 @@ import random
 def generate_instance(n: int):
     random.seed(0)
     # U
-    U:list = [random.randint(0,100)for _ in range(n)]
+    U:list = [random.randint(0,6)for _ in range(n)]
     # C
     C:list = [[random.randint(0,1)for _ in range(n)]for _ in range(n)]
     
@@ -22,4 +22,4 @@ def generate_instance(n: int):
 
 
 if __name__ == '__main__':
-    generate_instance(100)
+    generate_instance(4)

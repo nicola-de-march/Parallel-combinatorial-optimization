@@ -35,12 +35,6 @@ struct Node {
 // a same diagonal)
 bool isSafe(const std::vector<int>& board, const int row, const int col, const Data& data)
 {
-  for (int i = 0; i < row; ++i) {
-    if (board[i] == col - row + i || board[i] == col + row - i) {
-      return false;
-    }
-  }
-
   // Check additional constraints from data
   for (size_t i = 0; i < row; ++i) {
     if (data.get_C_at(i, row) && !(board[i] < col)) {
