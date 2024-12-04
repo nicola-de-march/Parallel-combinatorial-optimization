@@ -81,6 +81,7 @@ class Node {
     void setDomainValue(int var, int val) {
       domains[offset[var] + val] = false;
     }
+    
     // Setters
     inline void set_variable_index(int index) { variable_index = index; }
     inline void set_assignment(int val) { assignment = val; assignments[variable_index] = val; }

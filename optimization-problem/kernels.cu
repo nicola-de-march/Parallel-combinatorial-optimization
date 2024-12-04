@@ -2,9 +2,25 @@
 #include "parser.hpp"
 
 // CUDA kernel to check singleton values
-__global__ void checkSingletonKernel(bool* d_domains, int* d_offset, int* d_domain_upperbounds, bool* d_singleton, int* d_singleton_values, int N, int var) {
+__global__ void checkSingletonKernel(bool* d_domains, const int* d_offset, const int* d_domain_upperbounds, bool* d_singleton, int* d_singleton_values, int N) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  printf("idx: %d\n", idx);
+  int count = 0;
+  int val = -1;
+  if (idx < N) {
+    for (int i = 0; i <= d_domain_upperbounds[idx]; i++) {
+      if(d_domains[d_offset[idx] + i]) {
+        count++;
+        val = i;
+      }
+    }
+  }
+  if (idx < N && count == 1) {
+    d_singleton[idx] = true;
+    d_singleton_values[idx] = val;
+  }
+  else {
+    d_singleton[idx] = false;
+  }
 }
 
 // CUDA kernel to update domains

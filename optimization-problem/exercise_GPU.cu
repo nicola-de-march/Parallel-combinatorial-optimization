@@ -78,12 +78,6 @@ class Node {
       }
       return false;
     }
-
-    bool checkSingletonGPU() {
-      for (int i = 0; i < N; i++) {
-        checkSingleton(i);
-      }
-    }
   
     // Set domain value to false
     void setDomainValue(int var, int val) {
@@ -141,6 +135,12 @@ class Node {
       }
       std::cout << std::endl;
     }
+    void print_domain_upperbounds() const{
+      for (int size : domain_upperbounds) {
+        std::cout << size << " ";
+      }
+      std::cout << std::endl;
+    }
     void print_singleton() const{
       for (bool s : singleton) {
         std::cout << s << " ";
@@ -190,9 +190,10 @@ bool fixpointGPU(Node& node, const int var, const int assignments, const Data& d
   size_t singleton_size           = N * sizeof(bool);
 
   cudaMalloc(&d_domains, domains_size);
-  // cudaMalloc(&d_domain_upperbounds, domain_upperbounds_size);
+  cudaMalloc(&d_offset, domain_upperbounds_size);
+  cudaMalloc(&d_domain_upperbounds, domain_upperbounds_size);
   cudaMalloc(&d_singleton, singleton_size);
-  // cudaMalloc(&d_singleton_values, domain_upperbounds_size);
+  cudaMalloc(&d_singleton_values, domain_upperbounds_size);
 
   // Convert std::vector<bool> to bool[] for contiguous memory
   bool* domains_bool = new bool[domains_size];
@@ -204,78 +205,74 @@ bool fixpointGPU(Node& node, const int var, const int assignments, const Data& d
     singleton_bool[i] = node.get_singleton_pointer()[i];
   }
 
-
   // Host to Device
   cudaMemcpy(d_domains, domains_bool, domains_size, cudaMemcpyHostToDevice);
-  // cudaMemcpy(d_offset, node.get_offset_pointer().data(), domain_upperbounds_size, cudaMemcpyHostToDevice);
-  // cudaMemcpy(d_domain_upperbounds, node.get_domain_upperbounds_pointer().data(), domain_upperbounds_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_offset, node.get_offset_pointer().data(), domain_upperbounds_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_domain_upperbounds, node.get_domain_upperbounds_pointer().data(), domain_upperbounds_size, cudaMemcpyHostToDevice);
   cudaMemcpy(d_singleton, singleton_bool, singleton_size, cudaMemcpyHostToDevice);
-  // cudaMemcpy(d_singleton_values, node.get_singleton_values_pointer().data(), domain_upperbounds_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_singleton_values, node.get_singleton_values_pointer().data(), domain_upperbounds_size, cudaMemcpyHostToDevice);
 
   bool* old_domain = new bool[domains_size];
-  bool* tmp_domain = new bool[node.get_domains().size()];
 
-  bool* d_old_domain;
-  cudaMalloc(&d_old_domain, domains_size);
-
-  // while (true) {
-  //   cudaMemcpy(d_old_domain, d_domains, domains_size, cudaMemcpyDeviceToDevice);
-
-    int blockSize = 256;
-    int numBlocks = 1;
-
-    checkSingletonKernel<<<numBlocks, blockSize>>>(d_domains, d_offset, d_domain_upperbounds, d_singleton, d_singleton_values, N, var);
-    cudaDeviceSynchronize();
+  int blockSize = N;
+  int numBlocks = 1;
+  
+  std::cout << std::equal(domains_bool, domains_bool + domains_size, old_domain) << std::endl;
+  while(!std::equal(domains_bool, domains_bool + domains_size, old_domain)){
+    std::copy(domains_bool, domains_bool + domains_size, old_domain);
+    checkSingletonKernel<<<numBlocks, blockSize>>>(d_domains, d_offset, d_domain_upperbounds, d_singleton, d_singleton_values, N);
+  
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
-        printf("CUDA error: %s\n", cudaGetErrorString(err));
+      std::cout << "CUDA error: " << cudaGetErrorString(err) << std::endl;
+      std::cout << "Error in checkSingletonKernel" << std::endl;
+      std::exit(1);
     }
-
-    // updateDomainKernel<<<numBlocks, blockSize>>>(d_domains, d_domain_upperbounds, d_singleton, d_singleton_values, N, var, &data);
-    // cudaDeviceSynchronize();
-    // cudaError_t err = cudaGetLastError();
-    // if (err != cudaSuccess) {
-    //   printf("CUDA error: %s\n", cudaGetErrorString(err));
-    // }
-  //   cudaMemcpy(tmp_domain, d_domains, domains_size, cudaMemcpyDeviceToHost);
-
-  //   node.set_domains(tmp_domain);
-  //   old_domain = tmp_domain;
+    cudaMemcpy(domains_bool, d_domains, domains_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(singleton_bool, d_singleton, singleton_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(node.get_singleton_values_pointer().data(), d_singleton_values, singleton_size, cudaMemcpyDeviceToHost);
     
-  //   if (memcmp(old_domain, node.get_domains().data(), domains_size) == 0) {
-  //     break;
-  //   }
+    node.set_domains(domains_bool);
+    node.set_singleton(singleton_bool);
 
-  // }
+    node.print_domains();
+    node.print_singleton();
+
+    for (int i = var + 1; i < N; i++){
+      if(node.isSingleton(i)){
+        updateDomainSingleton(node, i, node.get_singleton_values().at(i), data);
+      }
+      else solution_found = false;
+    }
+    
+    for (size_t i = 0; i < domains_size; i++) {
+      domains_bool[i] = node.get_domains_pointer()[i];
+    }
+    cudaMemcpy(d_domains, domains_bool, domains_size, cudaMemcpyHostToDevice);
+  }
 
   // Device to Host
   cudaMemcpy(domains_bool, d_domains, domains_size, cudaMemcpyDeviceToHost);
-  // cudaMemcpy(node.get_offset_pointer().data(), d_offset, domain_upperbounds_size, cudaMemcpyDeviceToHost);
-  // cudaMemcpy(node.get_domain_upperbounds_pointer().data(), d_domain_upperbounds, domain_upperbounds_size, cudaMemcpyDeviceToHost);
-  // cudaMemcpy(node.get_singleton_pointer().data(), d_singleton, singleton_size, cudaMemcpyDeviceToHost);
-  // cudaMemcpy(node.get_singleton_values_pointer().data(), d_singleton_values, singleton_size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(singleton_bool, d_singleton, singleton_size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(node.get_offset_pointer().data(), d_offset, domain_upperbounds_size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(node.get_domain_upperbounds_pointer().data(), d_domain_upperbounds, domain_upperbounds_size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(node.get_singleton_values_pointer().data(), d_singleton_values, singleton_size, cudaMemcpyDeviceToHost);
 
   node.set_domains(domains_bool);
   node.set_singleton(singleton_bool);
-  
-
-  node.print_domains();
-  node.print_singleton();
 
   cudaFree(d_domains);
   cudaFree(d_domain_upperbounds);
   cudaFree(d_singleton);
   cudaFree(d_singleton_values);
-  cudaFree(d_old_domain);
+
 
   delete[] old_domain;
-  delete[] tmp_domain;
   delete[] domains_bool;
   delete[] singleton_bool;
 
   return solution_found;
 }
-
 
 
 // Evaluate and branch
@@ -372,5 +369,6 @@ int main(int argc, char** argv) {
     << "Number of nodes explored: \t" << exploredTree << "\n"
     << "Exection time:            \t" << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms" << 
   std::endl;
+
   return 0;
 }
