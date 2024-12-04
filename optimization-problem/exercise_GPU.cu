@@ -10,6 +10,12 @@
 // #include "parser.hpp"
 #include "kernels.cu"
 
+constexpr bool print = false;
+
+// Crete all global variable for the device
+int*    d_offset;
+int*    d_domain_upperbounds;
+
 // Node data structure
 class Node {
   private:
@@ -175,13 +181,17 @@ void updateDomainSingleton(Node &node, const int var, const int assignments, con
 }
 
 // Progagate the domains
-bool fixpointGPU(Node& node, const int var, const int assignments, const Data& data) {
+bool fixpointGPU(Node& node, const int var, const int assignments, const Data& data, const int* d_C) {
   int   N = node.get_N();
+
   bool  solution_found = true;
+  bool  old_solution_found = false;
+
+  bool* d_found_solution;
 
   bool*   d_domains;
-  int*    d_offset;
-  int*    d_domain_upperbounds;
+  // int*    d_offset;
+  // int*    d_domain_upperbounds;
   bool*   d_singleton;
   int*    d_singleton_values;
 
@@ -194,6 +204,8 @@ bool fixpointGPU(Node& node, const int var, const int assignments, const Data& d
   cudaMalloc(&d_domain_upperbounds, domain_upperbounds_size);
   cudaMalloc(&d_singleton, singleton_size);
   cudaMalloc(&d_singleton_values, domain_upperbounds_size);
+
+  cudaMalloc(&d_found_solution, sizeof(bool));
 
   // Convert std::vector<bool> to bool[] for contiguous memory
   bool* domains_bool = new bool[domains_size];
@@ -211,13 +223,12 @@ bool fixpointGPU(Node& node, const int var, const int assignments, const Data& d
   cudaMemcpy(d_domain_upperbounds, node.get_domain_upperbounds_pointer().data(), domain_upperbounds_size, cudaMemcpyHostToDevice);
   cudaMemcpy(d_singleton, singleton_bool, singleton_size, cudaMemcpyHostToDevice);
   cudaMemcpy(d_singleton_values, node.get_singleton_values_pointer().data(), domain_upperbounds_size, cudaMemcpyHostToDevice);
-
+  cudaMemcpy(d_found_solution, &solution_found, sizeof(bool), cudaMemcpyHostToDevice);
   bool* old_domain = new bool[domains_size];
 
   int blockSize = N;
   int numBlocks = 1;
-  
-  std::cout << std::equal(domains_bool, domains_bool + domains_size, old_domain) << std::endl;
+
   while(!std::equal(domains_bool, domains_bool + domains_size, old_domain)){
     std::copy(domains_bool, domains_bool + domains_size, old_domain);
     checkSingletonKernel<<<numBlocks, blockSize>>>(d_domains, d_offset, d_domain_upperbounds, d_singleton, d_singleton_values, N);
@@ -228,28 +239,42 @@ bool fixpointGPU(Node& node, const int var, const int assignments, const Data& d
       std::cout << "Error in checkSingletonKernel" << std::endl;
       std::exit(1);
     }
-    cudaMemcpy(domains_bool, d_domains, domains_size, cudaMemcpyDeviceToHost);
-    cudaMemcpy(singleton_bool, d_singleton, singleton_size, cudaMemcpyDeviceToHost);
-    cudaMemcpy(node.get_singleton_values_pointer().data(), d_singleton_values, singleton_size, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(domains_bool, d_domains, domains_size, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(singleton_bool, d_singleton, singleton_size, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(node.get_singleton_values_pointer().data(), d_singleton_values, singleton_size, cudaMemcpyDeviceToHost);
     
-    node.set_domains(domains_bool);
-    node.set_singleton(singleton_bool);
+    // node.set_domains(domains_bool);
+    // node.set_singleton(singleton_bool);
 
-    node.print_domains();
-    node.print_singleton();
-
-    for (int i = var + 1; i < N; i++){
-      if(node.isSingleton(i)){
-        updateDomainSingleton(node, i, node.get_singleton_values().at(i), data);
-      }
-      else solution_found = false;
+    // node.print_singleton();
+    
+    updateDomainKernel<<<numBlocks, blockSize>>>(d_domains, d_offset, d_domain_upperbounds, d_singleton, d_singleton_values, N, var, d_C);
+    
+    while (old_solution_found != solution_found) {
+      old_solution_found = solution_found;
+      checkForSolution<<<numBlocks, blockSize>>>(d_found_solution, d_singleton, var, N);
+      cudaMemcpy(&solution_found, d_found_solution, sizeof(bool), cudaMemcpyDeviceToHost);
     }
-    
+    cudaError_t err2 = cudaGetLastError();
+    if (err2 != cudaSuccess) {
+      std::cout << "CUDA error: " << cudaGetErrorString(err2) << std::endl;
+      std::cout << "Error in updateDomainKernel" << std::endl;
+      std::exit(1);
+    }
+       
     for (size_t i = 0; i < domains_size; i++) {
       domains_bool[i] = node.get_domains_pointer()[i];
     }
-    cudaMemcpy(d_domains, domains_bool, domains_size, cudaMemcpyHostToDevice);
+
+    // cudaMemcpy(d_domains, domains_bool, domains_size, cudaMemcpyHostToDevice);
   }
+
+  cudaMemcpy(d_domains, domains_bool, domains_size, cudaMemcpyHostToDevice);
+  cudaMemcpy(singleton_bool, d_singleton, singleton_size, cudaMemcpyDeviceToHost);
+  cudaMemcpy(node.get_singleton_values_pointer().data(), d_singleton_values, singleton_size, cudaMemcpyDeviceToHost);
+
+  node.set_domains(domains_bool);
+  node.set_singleton(singleton_bool);
 
   // Device to Host
   cudaMemcpy(domains_bool, d_domains, domains_size, cudaMemcpyDeviceToHost);
@@ -276,32 +301,40 @@ bool fixpointGPU(Node& node, const int var, const int assignments, const Data& d
 
 
 // Evaluate and branch
-void evaluate_and_branch(Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, const Data &data) {
-    std::cout << "Evaluating variable: " << parent.get_variable_index() << std::endl;
-    std::cout << "With value:  " << parent.get_assignment() << std::endl;
-    std::cout << "Current assignments : ";
-    parent.print_assignments();
-    std::cout << std::endl;
+void evaluate_and_branch(Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, const Data &data, const int* d_C) {
+     
+    if (print){
+      std::cout << "Evaluating variable: " << parent.get_variable_index() << std::endl;
+      std::cout << "With value:  " << parent.get_assignment() << std::endl;
+      std::cout << "Current assignments : ";
+      parent.print_assignments();
+      std::cout << std::endl;
+    }
     
     int depth = parent.get_variable_index(); // Current depth in the tree
     int N = parent.get_N();     // Total number of variables
 
     if (depth == N - 1) {
       num_sol++;
-      std::cout << "Solution found" << std::endl;
-      std::cout << "---------------------------------------------------------------" << std::endl;
+      if (print){
+        std::cout << "Solution found" << std::endl;
+        std::cout << "---------------------------------------------------------------" << std::endl;
+      }
       return;
     }
 
     
     // Propagate the domain restrictions
-    if(fixpointGPU(parent, depth, parent.get_assignment(), data)){
+    if(fixpointGPU(parent, depth, parent.get_assignment(), data, d_C)){
         num_sol ++;
-        std::cout << "Solution found with propagation" << std::endl;
-        std::cout << "---------------------------------------------------------------" << std::endl;
+        if (print){
+          std::cout << "Solution found with propagation" << std::endl;
+          std::cout << "---------------------------------------------------------------" << std::endl;
+        }
       return;
     }
-    std::cout << "---------------------------------------------------------------" << std::endl;
+    if (print)
+      std::cout << "---------------------------------------------------------------" << std::endl;
     // Check before create the node
     int depth_child = depth + 1;
     for(int i = depth + 1; i < N; i++){
@@ -337,12 +370,32 @@ int main(int argc, char** argv) {
   if (!data.read_input(argv[1])) {
     return 1;
   }
-  std::cout << "\tSET-UP PROBLEM\n" << std::endl;
+  
+  int deviceCount = 0;
+  cudaError_t err = cudaGetDeviceCount(&deviceCount);
+  if (deviceCount == 0) {
+    std::cout << "No CUDA device found" << std::endl;
+    return 1;
+  }
+  std::cout << "---------------------------------------------------------------" << std::endl;
+  std::cout << "\tSET-UP PROBLEM" << std::endl;
+  std::cout << "---------------------------------------------------------------" << std::endl;
   std::cout << "Data read successfully" << std::endl;
   std::cout << "Number of variables: " << data.get_n() << std::endl;
 
+  std::cout << "Devices available: " << deviceCount << std::endl;
+  std::cout << "Init GPU varaibles" << std::endl;
+
+  int** C = data.get_C();
+  int* C_flat = new int[data.get_n() * data.get_n()];
+  int* d_C;
+
+  cudaMalloc(&d_C, data.get_n() * data.get_n() * sizeof(int));
+  cudaMemcpy(d_C, C_flat, data.get_n() * data.get_n() * sizeof(int), cudaMemcpyHostToDevice);
+  
   Node root(data.get_n());
   root.init_domains(data.get_u());
+  std::cout << "Done" << std::endl;
 
   // Prepere the search
   std::stack<Node> stack;
@@ -358,7 +411,7 @@ int main(int argc, char** argv) {
   {
     Node current = std::move(stack.top());
     stack.pop();
-    evaluate_and_branch(current, stack, exploredTree, exploredSol, data);
+    evaluate_and_branch(current, stack, exploredTree, exploredSol, data, d_C);
   }
   auto end = std::chrono::high_resolution_clock::now();
 
