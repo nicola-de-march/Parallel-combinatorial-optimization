@@ -84,13 +84,17 @@ class Node {
     // Setters
     inline void set_variable_index(int index) { variable_index = index; }
     inline void set_assignment(int val) { assignment = val; assignments[variable_index] = val; }
+    inline void set_assignments_for_singleton(int var, int val) { assignments[var] = val; }
     // Getters
     inline int get_N() const { return N; }
     inline int get_variable_index() const { return variable_index; }
     inline int get_assignment() const { return assignment; }
-    inline std::vector<int>& get_assignments() { return assignments; }
-    inline std::vector<bool>& get_domains() { return domains; }
-    inline std::vector<int>& get_domain_upperbounds() { return domain_upperbounds; }
+    inline std::vector<int> get_assignments() { return assignments; }
+    inline std::vector<bool> get_domains() { return domains; }
+    inline std::vector<int> get_domain_upperbounds() { return domain_upperbounds; }
+    inline std::vector<int> get_offset() { return offset; }
+    inline std::vector<bool> get_singleton() { return singleton; }
+    inline std::vector<int> get_singleton_values() { return singleton_values; }
     
     // Printers
     void print_assignments() const{
@@ -129,16 +133,39 @@ void updateDomain(Node &node, const int var, const int assignments, const Data &
     }
   }
 }
-
-// Progagate the domains
-void fixpoint(Node &node, const int var, const int assignments, const Data &data){
-  // Check if the domain are singleton
-  for (int i = var + 1; i < node.get_N(); i++){
-    if (node.checkSingleton(i)){
-      updateDomain(node, i, assignments, data);
+// The same update domain but you change also variable that can be update before the variable index
+void updateDomainSingleton(Node &node, const int var, const int assignments, const Data &data){
+  for (int i = node.get_variable_index() + 1; i < node.get_N(); i++){
+    if (assignments <= node.get_domain_upperbounds()[i] && isNotSafe(data, var, i)){
+      node.setDomainValue(i, assignments); // Set the domain value to false
     }
   }
 }
+
+// Progagate the domains
+bool fixpoint(Node& node, const int var, const int assignments, const Data& data){
+  // Check if the domain are singleton
+  std::vector<bool> old_domain;
+  int N = node.get_N();
+
+  bool solution_found = true;
+
+  while (old_domain != node.get_domains()) {
+    old_domain = node.get_domains();
+    for (int i = var + 1; i < N; i++)
+      // Check for singleton values
+      node.checkSingleton(i);
+    // Update the domain if singleton are present
+    for (int i = var + 1; i < N; i++){
+      if(node.isSingleton(i)){
+        updateDomainSingleton(node, i, node.get_singleton_values().at(i), data);
+      }
+      else solution_found = false;
+    }
+  }
+  return solution_found;
+}
+
 
 // Evaluate and branch
 void evaluate_and_branch(Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, const Data &data) {
@@ -152,26 +179,40 @@ void evaluate_and_branch(Node& parent, std::stack<Node>& pool, size_t& tree_loc,
     int N = parent.get_N();     // Total number of variables
 
     if (depth == N - 1) {
-        num_sol++;
-        std::cout << "Solution found" << std::endl;
+      num_sol++;
+      std::cout << "Solution found" << std::endl;
+      std::cout << "---------------------------------------------------------------" << std::endl;
+      return;
+    }
+
+    
+    // Propagate the domain restrictions
+    if(fixpoint(parent, depth, parent.get_assignment(), data)){
+        num_sol ++;
+        std::cout << "Solution found with propagation" << std::endl;
         std::cout << "---------------------------------------------------------------" << std::endl;
-        return;
+      return;
     }
     std::cout << "---------------------------------------------------------------" << std::endl;
-    
+    // Check before create the node
     int depth_child = depth + 1;
-    
+    for(int i = depth + 1; i < N; i++){
+      if(parent.isSingleton(i)){
+        depth_child = i;
+        parent.set_assignments_for_singleton(i, parent.get_singleton_values()[i]);
+      }
+      else break;
+    }    
+    // Find a new possible child
     for (int val = 0; val <= parent.get_domain_upperbounds()[depth_child]; ++val) {
         if (parent.isInDomain(depth_child, val)) {
-            Node child = parent;
-            child.set_variable_index(depth_child);
-            child.set_assignment(val);
-            updateDomain(child, depth_child, val, data);
-            // @todo: Propagate the domain restrictions using the function `fixpoint`
-            //fixpoint(child, N, depth_child, val, data)
-            // Put child in the stack
-            pool.push(std::move(child));
-            tree_loc++;
+          Node child = parent;
+          child.set_variable_index(depth_child);
+          child.set_assignment(val);
+          updateDomain(child, depth_child, val, data);
+          // Put child in the stack
+          pool.push(std::move(child));
+          tree_loc++;
         }
     }
 }
