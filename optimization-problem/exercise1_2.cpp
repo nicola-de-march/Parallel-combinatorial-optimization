@@ -6,7 +6,10 @@
 #include <numeric>
 #include <stack>
 #include <cassert>
+#include <fstream>
 #include "parser.hpp"
+
+constexpr bool print = false;
 
 // Node data structure
 class Node {
@@ -142,22 +145,28 @@ void fixpoint(Node &node, const int var, const int assignments, const Data &data
 
 // Evaluate and branch
 void evaluate_and_branch(Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, const Data &data) {
-    std::cout << "Evaluating variable: " << parent.get_variable_index() << std::endl;
-    std::cout << "With value:  " << parent.get_assignment() << std::endl;
-    std::cout << "Current assignments : ";
-    parent.print_assignments();
-    std::cout << std::endl;
+    if (print){
+      std::cout << "Evaluating variable: " << parent.get_variable_index() << std::endl;
+      std::cout << "With value:  " << parent.get_assignment() << std::endl;
+      std::cout << "Current assignments : ";
+      parent.print_assignments();
+      std::cout << std::endl;
+    }
     
     int depth = parent.get_variable_index(); // Current depth in the tree
     int N = parent.get_N();     // Total number of variables
 
     if (depth == N - 1) {
         num_sol++;
-        std::cout << "Solution found" << std::endl;
-        std::cout << "---------------------------------------------------------------" << std::endl;
+        if (print){
+          std::cout << "Solution found" << std::endl;
+          std::cout << "---------------------------------------------------------------" << std::endl;
+        }
         return;
     }
-    std::cout << "---------------------------------------------------------------" << std::endl;
+    if (print){
+      std::cout << "---------------------------------------------------------------" << std::endl;
+    }
     
     int depth_child = depth + 1;
     
@@ -220,5 +229,12 @@ int main(int argc, char** argv) {
     << "Number of nodes explored: \t" << exploredTree << "\n"
     << "Exection time:            \t" << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms" << 
   std::endl;
+
+  // Insert the time into a csv file called time_results.csv
+  int N = data.get_n();
+  std::ofstream file;
+  file.open("time_results.csv", std::ios_base::app);
+  file << "normal, "<< N << ", "<< exploredTree << ", " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+  file.close();
   return 0;
 }

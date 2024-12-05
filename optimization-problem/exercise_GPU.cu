@@ -12,10 +12,6 @@
 
 constexpr bool print = false;
 
-// Crete all global variable for the device
-int*    d_offset;
-int*    d_domain_upperbounds;
-
 // Node data structure
 class Node {
   private:
@@ -190,8 +186,8 @@ bool fixpointGPU(Node& node, const int var, const int assignments, const Data& d
   bool* d_found_solution;
 
   bool*   d_domains;
-  // int*    d_offset;
-  // int*    d_domain_upperbounds;
+  int*    d_offset;
+  int*    d_domain_upperbounds;
   bool*   d_singleton;
   int*    d_singleton_values;
 
@@ -422,6 +418,13 @@ int main(int argc, char** argv) {
     << "Number of nodes explored: \t" << exploredTree << "\n"
     << "Exection time:            \t" << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << " ms" << 
   std::endl;
+
+  // Insert the time into a csv file called time_results.csv
+  int N = data.get_n();
+  std::ofstream file;
+  file.open("time_results.csv", std::ios_base::app);
+  file << "gpu, "<< N << ", "<< exploredTree << ", " << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "\n";
+  file.close();
 
   return 0;
 }
